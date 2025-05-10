@@ -1,0 +1,14 @@
+[project]
+name = "stable-diffusion"
+version = "0.1.0"
+description = "Lightning Stable Diffusion"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "diffusers>=0.33.1",
+    "jsonargparse[signatures]>=4.39.0",
+    "lightning>=2.5.1.post0",
+    "torch>=2.7.0",
+    "torchvision>=0.22.0",
+    "transformers>=4.51.3",
+]
