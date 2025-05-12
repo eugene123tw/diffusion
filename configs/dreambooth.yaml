@@ -1,23 +1,27 @@
 model:
   model_name: "stable-diffusion-v1-5/stable-diffusion-v1-5"
-  prior_loss_weight: 1.0
   learning_rate: 1e-5
+  train_text_encoder: false
+  with_prior_preservation: true
+  prior_loss_weight: 1.0
 
 trainer:
-  max_train_steps: 1000
+  max_steps: 400
   gradient_checkpointing: true
   mixed_precision: "fp16"
   accumulate_grad_batches: 1
   accelerator: "gpu"
   devices: 1
-  
+
 data:
   batch_size: 1                      # 👈 If using a LightningDataModule
   num_workers: 4
   image_dir: "path/to/images"  # 👈 Path to your training image
   num_class_images: 200
-  with_prior_preservation: true
-  class_prompt: "a photo of a <your_class_name>"
+  instance_prompt: "a photo of a sks <your_instance_name>"
+  instance_data_dir: "path/to/instance/images"  # 👈 Path to your instance images
+  class_prompt: "a <your_class_name>"
   class_data_dir: "path/to/class/images"  # 👈 Path to your class images
+  with_prior_preservation: true
   prior_generator: "stable-diffusion-v1-5/stable-diffusion-v1-5"
   prior_generation_precision: "fp16"

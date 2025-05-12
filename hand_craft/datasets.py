@@ -1,10 +1,10 @@
-import torch
-from torch.utils.data import Dataset
-import torchvision.transforms as transforms
 import cv2
-import numpy as np
 import matplotlib.pyplot as plt
-import os
+import numpy as np
+import torch
+import torchvision.transforms as transforms
+from torch.utils.data import Dataset
+
 
 class SpriteDataset(Dataset):
     def __init__(
@@ -18,12 +18,14 @@ class SpriteDataset(Dataset):
         pixel_size=32,
     ):
         super().__init__()
-        self.transform = transforms.Compose([
-            # transforms.ToPILImage(),            # convert to PIL image
-            # transforms.Resize((32, 32)),         # resize to 64x64
-            transforms.ToTensor(),                # from [0,255] to range [0.0,1.0]
-            transforms.Normalize((0.5,), (0.5,))  # range [-1,1]
-        ])
+        self.transform = transforms.Compose(
+            [
+                # transforms.ToPILImage(),            # convert to PIL image
+                # transforms.Resize((32, 32)),         # resize to 64x64
+                transforms.ToTensor(),  # from [0,255] to range [0.0,1.0]
+                transforms.Normalize((0.5,), (0.5,)),  # range [-1,1]
+            ]
+        )
         self.sprites = []
         for sprite_path in sprite_paths:
             sprites = crop_spritesheet(sprite_path, pixel_size)
@@ -57,7 +59,7 @@ def crop_spritesheet(
     # Loop over grid based on sprite size
     for y in range(0, h, sprite_size):
         for x in range(0, w, sprite_size):
-            sprite = sheet[y:y+sprite_size, x:x+sprite_size]
+            sprite = sheet[y : y + sprite_size, x : x + sprite_size]
             if not np.any(sprite[:, :, -1]):
                 continue  # Skip incomplete edge crops
             sprites.append(sprite[:, :, :-1])  # Exclude alpha channel
@@ -71,8 +73,7 @@ def crop_spritesheet(
         for i, sprite in enumerate(sprites):
             ax = axes[i // col, i % col]
             ax.imshow(cv2.cvtColor(sprite, cv2.COLOR_BGRA2RGBA))
-            ax.axis('off')
+            ax.axis("off")
         plt.tight_layout()
         plt.show()
     return np.stack(sprites)
-
