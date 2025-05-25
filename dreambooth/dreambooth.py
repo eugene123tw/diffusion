@@ -78,6 +78,37 @@ class DreamBoothLightningModule(pl.LightningModule):
             ]
         )
 
+        # Intialise validation pipeline
+        pipeline_args = {}
+        if self.vae is not None:
+            pipeline_args["vae"] = self.vae
+        self.val_pipeline = DiffusionPipeline.from_pretrained(
+            self.model_name,
+            tokenizer=self.tokenizer,
+            text_encoder=self.text_encoder,
+            unet=self.unet,
+            **pipeline_args,
+        )
+        self.val_pipeline.enable_xformers_memory_efficient_attention()
+        scheduler_args = {}
+        if "variance_type" in self.val_pipeline.scheduler.config:
+            variance_type = self.val_pipeline.scheduler.config.variance_type
+
+            if variance_type in ["learned", "learned_range"]:
+                variance_type = "fixed_small"
+
+            scheduler_args["variance_type"] = variance_type
+
+        self.val_pipeline.scheduler = DPMSolverMultistepScheduler.from_config(
+            self.val_pipeline.scheduler.config, **scheduler_args
+        )
+        self.val_pipeline.set_progress_bar_config(disable=True)
+
+    def on_fit_start(self):
+        self.unet.train()
+        self.val_pipeline.to(self.device)
+        return super().on_fit_start()
+
     def training_step(self, batch, batch_idx):
         # Implement the training step logic here
         pixel_values = batch["pixel_values"]
@@ -149,49 +180,22 @@ class DreamBoothLightningModule(pl.LightningModule):
 
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
-        pipeline_args = {}
-        if self.vae is not None:
-            pipeline_args["vae"] = self.vae
-
-        # create pipeline (note: unet and vae are loaded again in float32)
-        pipeline = DiffusionPipeline.from_pretrained(
-            self.model_name,
-            tokenizer=self.tokenizer,
-            text_encoder=self.text_encoder,
-            unet=self.unet,
-            **pipeline_args,
-        )
-        # We train on the simplified learning objective. If we were previously predicting a variance, we need the scheduler to ignore it
-        scheduler_args = {}
-
-        if "variance_type" in pipeline.scheduler.config:
-            variance_type = pipeline.scheduler.config.variance_type
-
-            if variance_type in ["learned", "learned_range"]:
-                variance_type = "fixed_small"
-
-            scheduler_args["variance_type"] = variance_type
-
-        pipeline.scheduler = DPMSolverMultistepScheduler.from_config(
-            pipeline.scheduler.config, **scheduler_args
-        )
-        pipeline = pipeline.to(self.device)
-        pipeline.set_progress_bar_config(disable=True)
-
-        pipeline_args = {"prompt": batch["prompt"]}
+        pipeline_args = {"prompt": batch["prompt"] * self.num_validation_images}
 
         # run inference
         generator = torch.Generator(device=self.device).manual_seed(42)
 
         with torch.autocast("cuda"):
-            pil_image = pipeline(
+            pil_images = self.val_pipeline(
                 **pipeline_args, num_inference_steps=25, generator=generator
-            ).images[0]
+            ).images
 
-        generated_tensor = self.img_to_tensor(pil_image).unsqueeze(0)
+        generated_tensor = torch.vstack(
+            [self.img_to_tensor(pil_image).unsqueeze(0) for pil_image in pil_images]
+        )
         self.clip_score_metric.update(
-            (generated_tensor * 255).to(torch.uint8).to(self.device),
-            batch["prompt"],
+            (generated_tensor * 255).to(torch.uint8),
+            batch["prompt"] * self.num_validation_images,
         )
 
     def on_validation_epoch_end(self):

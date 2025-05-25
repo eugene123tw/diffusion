@@ -245,7 +245,7 @@ class DreamBoothDataModule(pl.LightningDataModule):
 
         self.val_dataset = PromptDataset(
             prompt=self.instance_prompt,
-            num_samples=50,  # Number of iterations
+            num_samples=5,  # Number of iterations
         )
 
     def _generate_class_images(self):

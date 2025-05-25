@@ -1,0 +1,32 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Train Dreambooth",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "fit",
+                "--config", "configs/dreambooth.yaml",
+                "--data.instance_data_dir", "dreambooth_dataset/dataset/dog6",
+                "--data.instance_prompt", "a photo of a sks dog",
+                "--data.class_data_dir", "workspace/dogs",
+                "--data.class_prompt", "a photo of a dog",
+            ]
+        }
+    ]
+}

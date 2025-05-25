@@ -31,4 +31,5 @@ dependencies = [
   "torchmetrics>=1.7.1",
   "torchvision>=0.22",
   "transformers>=4.51.3",
+  "xformers>=0.0.30",
 ]
