@@ -5,12 +5,11 @@ from huggingface_hub import model_info
 from transformers import PretrainedConfig
 
 
-def load_text_encoder_class(model_name: str, revision: str):
+def load_text_encoder_class(model_name: str):
     """Load the text encoder class from the model name and revision."""
     text_encoder_config = PretrainedConfig.from_pretrained(
         model_name,
         subfolder="text_encoder",
-        revision=revision,
     )
     model_class = text_encoder_config.architectures[0]
 

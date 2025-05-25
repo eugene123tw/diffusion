@@ -6,9 +6,9 @@ import torch
 from diffusers import DiffusionPipeline
 from PIL import Image
 from PIL.ImageOps import exif_transpose
-from torch.utils.data import Dataset, random_split
+from torch.utils.data import Dataset
 from torchvision import transforms
-from transformers import PreTrainedTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizer
 
 
 def tokenize_prompt(tokenizer, prompt, tokenizer_max_length=None):
@@ -71,10 +71,10 @@ class DreamBoothDataset(Dataset):
 
     def __init__(
         self,
-        instance_data_root: Path,
+        instance_data_dir: Path,
         instance_prompt: str,
         tokenizer: PreTrainedTokenizer,
-        class_data_root: Path | None = None,
+        class_data_dir: Path | None = None,
         class_prompt: str | None = None,
         class_num: int | None = None,
         size: int = 512,
@@ -90,19 +90,19 @@ class DreamBoothDataset(Dataset):
         self.class_prompt_encoder_hidden_states = class_prompt_encoder_hidden_states
         self.tokenizer_max_length = tokenizer_max_length
 
-        self.instance_data_root = Path(instance_data_root)
-        if not self.instance_data_root.exists():
+        self.instance_data_dir = Path(instance_data_dir)
+        if not self.instance_data_dir.exists():
             raise ValueError(
-                f"Instance {self.instance_data_root} images root doesn't exists."
+                f"Instance {self.instance_data_dir} images root doesn't exists."
             )
 
-        self.instance_images_path = list(Path(instance_data_root).iterdir())
+        self.instance_images_path = list(Path(instance_data_dir).iterdir())
         self.num_instance_images = len(self.instance_images_path)
         self.instance_prompt = instance_prompt
         self._length = self.num_instance_images
 
-        if class_data_root is not None:
-            self.class_data_root = Path(class_data_root)
+        if class_data_dir is not None:
+            self.class_data_root = Path(class_data_dir)
             self.class_data_root.mkdir(parents=True, exist_ok=True)
             self.class_images_path = list(self.class_data_root.iterdir())
             if class_num is not None:
@@ -178,11 +178,27 @@ class DreamBoothDataset(Dataset):
         return example
 
 
+class PromptDataset(Dataset):
+    """A simple dataset to prepare the prompts to generate class images on multiple GPUs."""
+
+    def __init__(self, prompt, num_samples):
+        self.prompt = prompt
+        self.num_samples = num_samples
+
+    def __len__(self):
+        return self.num_samples
+
+    def __getitem__(self, index):
+        example = {}
+        example["prompt"] = self.prompt
+        example["index"] = index
+        return example
+
+
 class DreamBoothDataModule(pl.LightningDataModule):
     def __init__(
         self,
-        tokenizer: PreTrainedTokenizer,
-        image_dir: str,
+        model_name: str,
         class_prompt: str,
         class_data_dir: Path,
         instance_prompt: str,
@@ -195,7 +211,9 @@ class DreamBoothDataModule(pl.LightningDataModule):
         prior_generation_precision: str = "fp16",
     ):
         super().__init__()
-        self.image_dir = image_dir
+        self.model_name = model_name
+        self.instance_prompt = instance_prompt
+        self.instance_data_dir = Path(instance_data_dir)
         self.class_prompt = class_prompt
         self.class_data_dir = class_data_dir
         self.num_class_images = num_class_images
@@ -205,28 +223,30 @@ class DreamBoothDataModule(pl.LightningDataModule):
         self.prior_generator = prior_generator
         self.prior_generation_precision = prior_generation_precision
 
-        full_dataset = DreamBoothDataset(
-            self.image_dir,
+    def prepare_data(self):
+        if self.with_prior_preservation:
+            self._generate_class_images()
+
+        tokenizer = AutoTokenizer.from_pretrained(
+            self.model_name,
+            subfolder="tokenizer",
+            use_fast=False,
+        )
+
+        self.train_dataset = DreamBoothDataset(
+            instance_data_dir=self.instance_data_dir,
             tokenizer=tokenizer,
-            instance_data_root=instance_data_dir,
-            instance_prompt=instance_prompt,
+            instance_prompt=self.instance_prompt,
             class_prompt=self.class_prompt,
-            class_data_root=self.class_data_dir,
+            class_data_dir=self.class_data_dir,
             class_num=self.num_class_images,
             size=512,
         )
 
-        # Split the dataset into training and validation sets
-        # 90% for training and 10% for validation
-        self.train_dataset, self.val_dataset = random_split(
-            full_dataset,
-            [int(len(full_dataset) * 0.9), int(len(full_dataset) * 0.1)],
-            generator=torch.Generator().manual_seed(42),
+        self.val_dataset = PromptDataset(
+            prompt=self.instance_prompt,
+            num_samples=50,  # Number of iterations
         )
-
-    def prepare_data(self):
-        if self.with_prior_preservation:
-            self._generate_class_images()
 
     def _generate_class_images(self):
         self.class_data_dir.mkdir(parents=True, exist_ok=True)
@@ -234,6 +254,9 @@ class DreamBoothDataModule(pl.LightningDataModule):
         if curr_class_images > self.num_class_images:
             print(f"[✓] Using existing class images at {self.class_data_dir}")
             return
+
+        sample_dataset = PromptDataset(self.class_prompt, self.num_class_images)
+        sample_dataloader = torch.utils.data.DataLoader(sample_dataset, batch_size=4)
 
         num_new_images = self.num_class_images - curr_class_images
 
@@ -251,9 +274,14 @@ class DreamBoothDataModule(pl.LightningDataModule):
             safety_checker=None,
         ).to("cuda")
 
-        for i in range(self.num_class_images):
-            image = pipeline(self.class_prompt).images[0]
-            image.save(self.class_data_di / f"{i:04}.jpg")
+        for example in sample_dataloader:
+            images = pipeline(example["prompt"]).images
+            for i, image in enumerate(images):
+                image_filename = (
+                    self.class_data_dir
+                    / f"{example['index'][i] + curr_class_images}.jpg"
+                )
+                image.save(image_filename)
         print(
             f"[✓] Generated {self.num_class_images} class images to {self.class_data_dir}"
         )
@@ -274,10 +302,7 @@ class DreamBoothDataModule(pl.LightningDataModule):
     def val_dataloader(self):
         return torch.utils.data.DataLoader(
             self.val_dataset,
-            batch_size=self.batch_size,
+            batch_size=1,
             shuffle=False,
-            collate_fn=lambda examples: collate_fn(
-                examples, self.with_prior_preservation
-            ),
             num_workers=self.num_workers,
         )

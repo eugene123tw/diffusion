@@ -4,24 +4,31 @@ model:
   train_text_encoder: false
   with_prior_preservation: true
   prior_loss_weight: 1.0
+  num_validation_images: 4
 
 trainer:
-  max_steps: 400
-  gradient_checkpointing: true
-  mixed_precision: "fp16"
+  max_epochs: 10
   accumulate_grad_batches: 1
   accelerator: "gpu"
   devices: 1
+  callbacks:
+    - class_path: pytorch_lightning.callbacks.ModelCheckpoint
+      init_args:
+        monitor: val/clip_score
+        mode: max
+        filename: "best"
+        save_top_k: 1
+        dirpath: "checkpoints"
 
 data:
   batch_size: 1                      # 👈 If using a LightningDataModule
   num_workers: 4
-  image_dir: "path/to/images"  # 👈 Path to your training image
-  num_class_images: 200
+  num_class_images: 100
+  model_name: "stable-diffusion-v1-5/stable-diffusion-v1-5"
   instance_prompt: "a photo of a sks <your_instance_name>"
   instance_data_dir: "path/to/instance/images"  # 👈 Path to your instance images
-  class_prompt: "a <your_class_name>"
-  class_data_dir: "path/to/class/images"  # 👈 Path to your class images
+  class_prompt: "a photo of a <your_class_name>"
+  class_data_dir: "workspace/class_images"  # 👈 Path to save generated class images
   with_prior_preservation: true
   prior_generator: "stable-diffusion-v1-5/stable-diffusion-v1-5"
   prior_generation_precision: "fp16"
