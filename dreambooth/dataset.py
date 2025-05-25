@@ -203,6 +203,7 @@ class DreamBoothDataModule(pl.LightningDataModule):
         class_data_dir: Path,
         instance_prompt: str,
         instance_data_dir: Path,
+        predict_prompt: str,
         num_class_images: int = 200,
         with_prior_preservation: bool = False,
         batch_size: int = 1,
@@ -222,8 +223,16 @@ class DreamBoothDataModule(pl.LightningDataModule):
         self.num_workers = num_workers
         self.prior_generator = prior_generator
         self.prior_generation_precision = prior_generation_precision
+        self.predict_prompt = predict_prompt
 
     def prepare_data(self):
+        if not self.trainer.training:
+            self.predict_dataset = PromptDataset(
+                prompt=self.predict_prompt,
+                num_samples=1,
+            )
+            return
+
         if self.with_prior_preservation:
             self._generate_class_images()
 
@@ -302,6 +311,14 @@ class DreamBoothDataModule(pl.LightningDataModule):
     def val_dataloader(self):
         return torch.utils.data.DataLoader(
             self.val_dataset,
+            batch_size=1,
+            shuffle=False,
+            num_workers=self.num_workers,
+        )
+
+    def predict_dataloader(self):
+        return torch.utils.data.DataLoader(
+            self.predict_dataset,
             batch_size=1,
             shuffle=False,
             num_workers=self.num_workers,

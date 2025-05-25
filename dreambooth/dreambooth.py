@@ -1,4 +1,5 @@
 import itertools
+from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
@@ -26,6 +27,7 @@ class DreamBoothLightningModule(pl.LightningModule):
         with_prior_preservation=False,
         prior_loss_weight=1.0,
         num_validation_images=4,
+        num_predict_images=5,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -35,6 +37,7 @@ class DreamBoothLightningModule(pl.LightningModule):
         self.prior_loss_weight = prior_loss_weight
         self.learning_rate = learning_rate
         self.num_validation_images = num_validation_images
+        self.num_predict_images = num_predict_images
         self.clip_score_metric = CLIPScore(
             model_name_or_path="openai/clip-vit-base-patch16"
         )
@@ -109,6 +112,10 @@ class DreamBoothLightningModule(pl.LightningModule):
         self.val_pipeline.to(self.device)
         return super().on_fit_start()
 
+    def on_predict_start(self):
+        self.val_pipeline.to(self.device)
+        return super().on_predict_start()
+
     def training_step(self, batch, batch_idx):
         # Implement the training step logic here
         pixel_values = batch["pixel_values"]
@@ -182,12 +189,10 @@ class DreamBoothLightningModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         pipeline_args = {"prompt": batch["prompt"] * self.num_validation_images}
 
-        # run inference
-        generator = torch.Generator(device=self.device).manual_seed(42)
-
         with torch.autocast("cuda"):
             pil_images = self.val_pipeline(
-                **pipeline_args, num_inference_steps=25, generator=generator
+                **pipeline_args,
+                num_inference_steps=25,
             ).images
 
         generated_tensor = torch.vstack(
@@ -204,9 +209,29 @@ class DreamBoothLightningModule(pl.LightningModule):
         self.log("val/clip_score", clip_score, on_epoch=True, prog_bar=True)
         self.clip_score_metric.reset()
 
-    # @torch.no_grad()
-    # def test_step(self, batch, batch_idx):
-    #     pixel_values = batch["pixel_values"]
+    @torch.no_grad()
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        pipeline_args = {"prompt": batch["prompt"]}
+
+        # generate images
+        outputs = self.val_pipeline(
+            **pipeline_args,
+            num_inference_steps=50,
+            num_images_per_prompt=self.num_predict_images,
+        ).images
+
+        # --- save to default logs folder ---
+        # e.g. lightning_logs/version_0/predictions/
+        log_dir = Path(self.logger.log_dir)
+        save_dir = log_dir / "predictions"
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        for i, img in enumerate(outputs):
+            # you can include batch_idx or a timestamp if you like
+            fname = f"batch{batch_idx:03d}_img{i:02d}.png"
+            img.save(save_dir / fname)
+
+        return outputs
 
     def configure_optimizers(self):
         # Implement the optimizer configuration here

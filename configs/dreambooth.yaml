@@ -5,6 +5,7 @@ model:
   with_prior_preservation: true
   prior_loss_weight: 1.0
   num_validation_images: 4
+  num_predict_images: 4
 
 trainer:
   max_epochs: 10
@@ -32,3 +33,4 @@ data:
   with_prior_preservation: true
   prior_generator: "stable-diffusion-v1-5/stable-diffusion-v1-5"
   prior_generation_precision: "fp16"
+  predict_prompt: "a photo of a sks <your_instance_name>"

@@ -27,6 +27,20 @@
                 "--data.class_data_dir", "workspace/dogs",
                 "--data.class_prompt", "a photo of a dog",
             ]
+        },
+        {
+            "name": "Predict Dreambooth",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "predict",
+                "--config", "configs/dreambooth.yaml",
+                "--ckpt_path", "checkpoints/best.ckpt",
+                "--data.predict_prompt", "a photo of a sks dog in jungle",
+            ]
         }
     ]
 }
